@@ -1,4 +1,4 @@
-"""ADK function tools for the flowchart assessment agent."""
+"""ADK function tools for the flowchart agent."""
 
 from __future__ import annotations
 
@@ -13,8 +13,20 @@ from flowchart_agent.database.models import (
 )
 
 
+def _flowchart_id(tool_context: ToolContext) -> str:
+    """Return the current flowchart_id from state, defaulting to 'default'."""
+    return tool_context.state.get("app:flowchart_id", "default")
+
+
+def _completion_message(tool_context: ToolContext) -> str:
+    """Return the configured completion message."""
+    return tool_context.state.get(
+        "app:completion_message", "All questions have been answered."
+    )
+
+
 async def get_next_question(tool_context: ToolContext) -> dict:
-    """Get the next unanswered question in the flowchart assessment.
+    """Get the next unanswered question in the flowchart.
 
     Call this tool to determine which question to ask the user next.
     It automatically skips questions the user has already answered
@@ -31,7 +43,7 @@ async def get_next_question(tool_context: ToolContext) -> dict:
     if is_complete(graph, answers):
         return {
             "status": "complete",
-            "message": "The assessment is complete! All questions have been answered.",
+            "message": _completion_message(tool_context),
             "total_answered": len(answers),
         }
 
@@ -39,7 +51,7 @@ async def get_next_question(tool_context: ToolContext) -> dict:
     if next_node is None:
         return {
             "status": "complete",
-            "message": "The assessment is complete!",
+            "message": _completion_message(tool_context),
             "total_answered": len(answers),
         }
 
@@ -84,7 +96,7 @@ async def save_user_answer(
 
     # Persist to SQLite
     user_id = tool_context.state.get("user_id", "default_user")
-    await db_save_answer(user_id, question_id, answer)
+    await db_save_answer(user_id, question_id, answer, _flowchart_id(tool_context))
 
     node = graph["nodes"][question_id]
     return {
@@ -100,10 +112,10 @@ async def load_user_history(tool_context: ToolContext) -> dict:
 
     Call this at the start of a conversation to restore any answers
     the user has already provided in past sessions. This allows the
-    assessment to resume where they left off.
+    questionnaire to resume where they left off.
     """
     user_id = tool_context.state.get("user_id", "default_user")
-    saved_answers = await db_load_answers(user_id)
+    saved_answers = await db_load_answers(user_id, _flowchart_id(tool_context))
 
     if saved_answers:
         # Merge into session state
@@ -127,8 +139,8 @@ async def load_prefilled_answers(
         prefilled_data: A JSON string of question_id to answer mappings,
                         e.g. '{"Q1": "John Doe", "Q2": "35"}'
 
-    This lets you inject answers from external systems (EHR, CRM, etc.)
-    so the user isn't asked questions with known answers.
+    This lets you inject answers from external systems so the user isn't
+    asked questions with known answers.
     """
     try:
         data = json.loads(prefilled_data)
@@ -150,8 +162,9 @@ async def load_prefilled_answers(
 
     # Also persist to DB
     user_id = tool_context.state.get("user_id", "default_user")
+    fid = _flowchart_id(tool_context)
     for qid in loaded:
-        await db_save_answer(user_id, qid, answers[qid])
+        await db_save_answer(user_id, qid, answers[qid], fid)
 
     return {
         "status": "prefilled",
@@ -161,7 +174,7 @@ async def load_prefilled_answers(
 
 
 async def check_assessment_status(tool_context: ToolContext) -> dict:
-    """Check the current progress of the assessment.
+    """Check the current progress of the questionnaire.
 
     Returns a summary of answered and remaining questions,
     along with the answers provided so far.
@@ -195,8 +208,78 @@ async def check_assessment_status(tool_context: ToolContext) -> dict:
     }
 
 
+async def get_current_question_details(tool_context: ToolContext) -> dict:
+    """Get the details of the current question being asked.
+
+    Returns the question's ID, text, type, and choices so the validator
+    can check whether the user's answer is appropriate for the question type.
+    This reads from the last question returned by get_next_question.
+    """
+    graph = tool_context.state.get("app:flowchart_graph")
+    if not graph:
+        return {"error": "Flowchart not initialized."}
+
+    answers = tool_context.state.get("answers", {})
+
+    next_node = find_next_unanswered(graph, answers)
+    if next_node is None:
+        return {
+            "status": "complete",
+            "message": "All questions have been answered.",
+        }
+
+    return {
+        "question_id": next_node["id"],
+        "question_text": next_node["text"],
+        "question_type": next_node["question_type"],
+        "choices": next_node.get("choices", []),
+    }
+
+
+async def get_all_questions(tool_context: ToolContext) -> dict:
+    """Get ALL questions in the flowchart with their current answer status.
+
+    Returns every question node in the flowchart, including:
+    - Already answered questions (with their current answer, for updates)
+    - Unanswered questions (for pre-answering from a single user response)
+
+    This allows the validator to:
+    1. Match any part of the user's response to any question in the flowchart
+    2. Update previously answered questions if the user provides a new answer
+    3. Pre-fill future questions if the user answers them early
+    """
+    graph = tool_context.state.get("app:flowchart_graph")
+    if not graph:
+        return {"error": "Flowchart not initialized."}
+
+    answers = tool_context.state.get("answers", {})
+    current_node = find_next_unanswered(graph, answers)
+    current_id = current_node["id"] if current_node else None
+
+    questions = []
+    for node_id, node in graph["nodes"].items():
+        if node["type"] != "question":
+            continue
+        existing_answer = answers.get(node_id)
+        questions.append({
+            "question_id": node["id"],
+            "question_text": node["text"],
+            "question_type": node["question_type"],
+            "choices": node.get("choices", []),
+            "is_answered": existing_answer is not None,
+            "current_answer": existing_answer,
+            "is_current": node_id == current_id,
+        })
+
+    return {
+        "status": "complete" if current_id is None else "in_progress",
+        "current_question_id": current_id,
+        "questions": questions,
+    }
+
+
 async def restart_assessment(tool_context: ToolContext) -> dict:
-    """Restart the assessment from the beginning.
+    """Restart the questionnaire from the beginning.
 
     Clears all saved answers from both session state and the database.
     The user will be asked all questions again from the start.
@@ -207,9 +290,9 @@ async def restart_assessment(tool_context: ToolContext) -> dict:
     tool_context.state["answers"] = {}
 
     # Clear database
-    await db_clear_answers(user_id)
+    await db_clear_answers(user_id, _flowchart_id(tool_context))
 
     return {
         "status": "restarted",
-        "message": "Assessment has been restarted. All previous answers have been cleared.",
+        "message": "All previous answers have been cleared. Starting over.",
     }

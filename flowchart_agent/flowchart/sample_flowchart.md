@@ -1,3 +1,10 @@
+---
+title: Health Intake Assessment
+persona: a warm, professional health intake coordinator
+domain: health assessment questionnaire
+tone_notes: Be empathetic and reassuring, especially for sensitive health questions.
+completion_message: Your health assessment is complete. Thank you!
+---
 ```mermaid
 flowchart TD
     Q1["What is your full name?"]

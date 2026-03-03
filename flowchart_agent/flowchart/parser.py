@@ -1,30 +1,43 @@
 """Mermaid flowchart parser — converts Mermaid text into a graph dict."""
 
+from __future__ import annotations
+
 import re
 from pathlib import Path
 
 
-def parse_mermaid_flowchart(mermaid_text: str | None = None) -> dict:
+def parse_mermaid_flowchart(
+    mermaid_text: str | None = None,
+) -> tuple[dict, dict]:
     """Parse Mermaid flowchart TD syntax into a serializable graph dict.
 
+    Supports optional YAML frontmatter between ``---`` markers for metadata
+    (title, persona, domain, tone_notes, completion_message).
+
+    Args:
+        mermaid_text: Raw Mermaid string (including optional frontmatter).
+                      When *None*, loads ``sample_flowchart.md`` from this package.
+
     Returns:
-        {
-            "nodes": {
-                "Q1": {"id": "Q1", "text": "What is your name?", "type": "question",
-                        "question_type": "text", "choices": []},
-                ...
-            },
-            "edges": [
-                {"from": "Q1", "to": "Q2", "condition": None},
-                {"from": "Q2", "to": "Q4_minor", "condition": "< 18"},
-                ...
-            ],
-            "start_node": "Q1"
-        }
+        A ``(graph, metadata)`` tuple where *graph* is::
+
+            {
+                "nodes": { "Q1": { ... }, ... },
+                "edges": [ ... ],
+                "start_node": "Q1"
+            }
+
+        and *metadata* is a dict of frontmatter key/value pairs (may be empty).
     """
     if mermaid_text is None:
         sample = Path(__file__).parent / "sample_flowchart.md"
         mermaid_text = sample.read_text()
+
+    # --- Extract optional YAML frontmatter ---
+    metadata = _extract_frontmatter(mermaid_text)
+
+    # Strip frontmatter block from the mermaid source
+    mermaid_text = re.sub(r"^---\s*\n.*?\n---\s*\n", "", mermaid_text, flags=re.DOTALL)
 
     # Strip markdown fences
     mermaid_text = re.sub(r"```mermaid\s*", "", mermaid_text)
@@ -73,7 +86,29 @@ def parse_mermaid_flowchart(mermaid_text: str | None = None) -> dict:
     # Infer choices for nodes with multiple conditional outgoing edges
     _infer_choices(nodes, edges)
 
-    return {"nodes": nodes, "edges": edges, "start_node": start_node}
+    graph = {"nodes": nodes, "edges": edges, "start_node": start_node}
+    return graph, metadata
+
+
+def _extract_frontmatter(text: str) -> dict:
+    """Parse YAML frontmatter between ``---`` markers.
+
+    Returns an empty dict when no frontmatter is found.  Uses a simple
+    key: value parser to avoid adding a PyYAML dependency.
+    """
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.DOTALL)
+    if not match:
+        return {}
+
+    metadata: dict[str, str] = {}
+    for line in match.group(1).splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            key, _, value = line.partition(":")
+            metadata[key.strip()] = value.strip().strip("\"'")
+    return metadata
 
 
 def _make_node(node_id: str, text: str) -> dict:

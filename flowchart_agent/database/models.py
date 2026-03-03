@@ -1,4 +1,4 @@
-"""SQLite persistence for assessment answers."""
+"""SQLite persistence for flowchart answers."""
 
 from __future__ import annotations
 
@@ -21,46 +21,62 @@ async def init_db() -> None:
         _run_sync(
             """
             CREATE TABLE IF NOT EXISTS answers (
-                user_id   TEXT NOT NULL,
-                question_id TEXT NOT NULL,
-                answer    TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                PRIMARY KEY (user_id, question_id)
+                user_id       TEXT NOT NULL,
+                flowchart_id  TEXT NOT NULL DEFAULT 'default',
+                question_id   TEXT NOT NULL,
+                answer        TEXT NOT NULL,
+                timestamp     TEXT NOT NULL,
+                PRIMARY KEY (user_id, flowchart_id, question_id)
             )
             """
         )
         _initialized = True
 
 
-async def save_answer(user_id: str, question_id: str, answer: str) -> None:
+async def save_answer(
+    user_id: str, question_id: str, answer: str, flowchart_id: str = "default"
+) -> None:
     """Upsert a single answer."""
     await init_db()
     _run_sync(
         """
-        INSERT INTO answers (user_id, question_id, answer, timestamp)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(user_id, question_id)
+        INSERT INTO answers (user_id, flowchart_id, question_id, answer, timestamp)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, flowchart_id, question_id)
         DO UPDATE SET answer = excluded.answer, timestamp = excluded.timestamp
         """,
-        (user_id, question_id, answer, datetime.now(timezone.utc).isoformat()),
+        (
+            user_id,
+            flowchart_id,
+            question_id,
+            answer,
+            datetime.now(timezone.utc).isoformat(),
+        ),
     )
 
 
-async def load_answers(user_id: str) -> dict[str, str]:
-    """Load all answers for a user as {question_id: answer}."""
+async def load_answers(
+    user_id: str, flowchart_id: str = "default"
+) -> dict[str, str]:
+    """Load all answers for a user/flowchart as {question_id: answer}."""
     await init_db()
     rows = _run_sync(
-        "SELECT question_id, answer FROM answers WHERE user_id = ?",
-        (user_id,),
+        "SELECT question_id, answer FROM answers WHERE user_id = ? AND flowchart_id = ?",
+        (user_id, flowchart_id),
         fetch=True,
     )
     return {r[0]: r[1] for r in rows}
 
 
-async def clear_answers(user_id: str) -> None:
-    """Delete all answers for a user."""
+async def clear_answers(
+    user_id: str, flowchart_id: str = "default"
+) -> None:
+    """Delete all answers for a user/flowchart."""
     await init_db()
-    _run_sync("DELETE FROM answers WHERE user_id = ?", (user_id,))
+    _run_sync(
+        "DELETE FROM answers WHERE user_id = ? AND flowchart_id = ?",
+        (user_id, flowchart_id),
+    )
 
 
 def _run_sync(sql: str, params: tuple = (), *, fetch: bool = False):

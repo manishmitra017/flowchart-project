@@ -5,4 +5,6 @@ from .flowchart_tools import (
     load_prefilled_answers,
     check_assessment_status,
     restart_assessment,
+    get_current_question_details,
+    get_all_questions,
 )

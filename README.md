@@ -1,6 +1,6 @@
 # Flowchart Conversational Agent
 
-A conversational AI agent built with [Google ADK](https://google.github.io/adk-docs/) that parses a Mermaid flowchart, asks questions following the flowchart logic, stores answers in SQLite, and skips already-answered questions.
+A conversational AI agent built with [Google ADK](https://google.github.io/adk-docs/) that parses **any** Mermaid flowchart, asks questions following the flowchart logic, stores answers in SQLite, and skips already-answered questions.
 
 ## How It Works
 
@@ -10,39 +10,7 @@ The agent reads a Mermaid flowchart definition and uses it to drive a conversati
 - Handles conditional branching (e.g., age-based paths, yes/no follow-ups)
 - Persists answers to SQLite so users can resume across sessions
 - Skips questions that have already been answered
-
-The included demo flowchart is a health intake assessment with 10 questions covering name, age, allergies, smoking status, and health conditions.
-
-```mermaid
-flowchart TD
-    Q1["What is your full name?"]
-    Q2["How old are you?"]
-    Q3["What is your biological sex? (Male/Female/Other)"]
-    Q4_minor["Who is your parent or guardian?"]
-    Q4_adult["What is your current occupation?"]
-    Q5["Do you have any known allergies? (Yes/No)"]
-    Q6["Please list your allergies"]
-    Q7["Do you currently smoke? (Yes/No)"]
-    Q8["How many cigarettes per day do you smoke?"]
-    Q9["Do you have any of the following conditions? (Diabetes/Hypertension/Heart Disease/None)"]
-    Q10["Please describe any additional health concerns"]
-    END_COMPLETE["Assessment complete. Thank you!"]
-
-    Q1 --> Q2
-    Q2 -->|"< 18"| Q4_minor
-    Q2 -->|">= 18"| Q4_adult
-    Q4_minor --> Q5
-    Q4_adult --> Q3
-    Q3 --> Q5
-    Q5 -->|"Yes"| Q6
-    Q5 -->|"No"| Q7
-    Q6 --> Q7
-    Q7 -->|"Yes"| Q8
-    Q7 -->|"No"| Q9
-    Q8 --> Q9
-    Q9 --> Q10
-    Q10 --> END_COMPLETE
-```
+- Adapts its persona, tone, and domain language based on frontmatter metadata
 
 ## Prerequisites
 
@@ -72,21 +40,19 @@ flowchart TD
 
 ## Running the Agent
 
-### ADK Web UI (recommended)
-
-From the project root (`flowchart_project/`):
+### With the default flowchart (health intake demo)
 
 ```bash
 uv run adk web .
 ```
 
-This starts a local server at `http://127.0.0.1:8000` with a browser-based chat interface. Select `flowchart_agent` from the agent dropdown and start chatting.
-
-To use a different port:
+### With a custom flowchart
 
 ```bash
-uv run adk web --port 8080 .
+FLOWCHART_PATH=./my_flowchart.md uv run adk web .
 ```
+
+The `FLOWCHART_PATH` environment variable points to any `.md` file containing a Mermaid flowchart (with optional frontmatter). When omitted, the bundled health intake demo is used.
 
 ### ADK CLI
 
@@ -94,28 +60,61 @@ uv run adk web --port 8080 .
 uv run adk run flowchart_agent
 ```
 
-This runs the agent in your terminal for a text-based conversation.
+## Creating a Custom Flowchart
 
-## What to Expect
+Create a `.md` file with optional YAML frontmatter and a Mermaid flowchart:
 
-1. The agent greets you and asks your name (Q1)
-2. It asks your age (Q2), then branches:
-   - **Under 18** → asks for parent/guardian name, then skips occupation
-   - **18 or older** → asks occupation, then biological sex
-3. Asks about allergies — if **Yes**, asks you to list them; if **No**, skips that
-4. Asks about smoking — if **Yes**, asks cigarettes per day; if **No**, skips that
-5. Asks about existing conditions, then any additional health concerns
-6. Summarizes the completed assessment
+```markdown
+---
+title: Customer Onboarding
+persona: a friendly customer success representative
+domain: onboarding questionnaire
+tone_notes: Be encouraging and welcoming to new customers.
+completion_message: Welcome aboard! Your onboarding is complete.
+---
+```mermaid
+flowchart TD
+    Q1["What is your company name?"]
+    Q2["How many employees do you have?"]
+    Q2 -->|"< 50"| Q3_small["Which plan interests you? (Starter/Growth)"]
+    Q2 -->|">= 50"| Q3_enterprise["Would you like a dedicated account manager? (Yes/No)"]
+    Q3_small --> Q4["How did you hear about us?"]
+    Q3_enterprise --> Q4
+    Q4 --> END_DONE["Onboarding complete!"]
 
-### Special Commands During the Chat
+    Q1 --> Q2
+` ` `
+```
+
+### Frontmatter Fields
+
+All fields are optional. When omitted, sensible defaults are used.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `title` | `Questionnaire` | Flowchart name (also used as database namespace) |
+| `persona` | `a friendly, professional assistant` | How the agent introduces itself |
+| `domain` | `questionnaire` | Domain context used in the system prompt |
+| `tone_notes` | *(empty)* | Extra tone guidance (e.g., "Be empathetic for sensitive topics") |
+| `completion_message` | `All questions have been answered.` | Message shown when the flowchart is complete |
+
+### Flowchart Syntax
+
+- **Node definitions:** `Q1["Your question text here"]`
+- **Unconditional edges:** `Q1 --> Q2`
+- **Conditional edges:** `Q1 -->|"Yes"| Q2` or `Q1 -->|">= 18"| Q3`
+- **Terminal nodes:** Any node with "complete", "end", "finish", "done", or "thank" in its text
+- **Question type inference:** `(Yes/No)` → yes/no, `(A/B/C)` → multiple choice, "how many" → numeric, otherwise → free text
+
+## Special Commands During the Chat
 
 - **"What's my status?"** — shows how many questions you've answered
 - **"Start over"** / **"Restart"** — clears all answers and begins again
 - **"I want to change my answer to Q3"** — updates a previous answer
 
-### Resuming a Session
+## Resuming a Session
 
-Answers are saved to SQLite (`flowchart_agent/database/answers.db`). If you stop and restart the agent, it loads your previous answers and picks up where you left off.
+Answers are saved to SQLite (`flowchart_agent/database/answers.db`), namespaced by flowchart title. If you stop and restart the agent, it loads your previous answers and picks up where you left off.
 
 ## Project Structure
 
@@ -126,23 +125,14 @@ flowchart_project/
 └── flowchart_agent/
     ├── __init__.py                         # Exports root_agent
     ├── agent.py                            # LlmAgent definition + init callback
-    ├── prompt.py                           # System instruction
+    ├── config.py                           # FlowchartConfig dataclass + defaults
+    ├── prompt.py                           # Dynamic system instruction (InstructionProvider)
     ├── flowchart/
-    │   ├── parser.py                       # Mermaid text → graph dict
+    │   ├── parser.py                       # Mermaid text + frontmatter → graph dict
     │   ├── navigator.py                    # Graph traversal + branching logic
     │   └── sample_flowchart.md             # Demo health assessment flowchart
     ├── tools/
     │   └── flowchart_tools.py              # 6 ADK function tools
     └── database/
-        └── models.py                       # SQLite schema + CRUD
+        └── models.py                       # SQLite schema + CRUD (with flowchart_id)
 ```
-
-## Using a Custom Flowchart
-
-Replace the contents of `flowchart_agent/flowchart/sample_flowchart.md` with your own Mermaid flowchart. The parser supports:
-
-- **Node definitions:** `Q1["Your question text here"]`
-- **Unconditional edges:** `Q1 --> Q2`
-- **Conditional edges:** `Q1 -->|"Yes"| Q2` or `Q1 -->|">= 18"| Q3`
-- **Terminal nodes:** Any node with "complete", "end", "finish", or "thank" in its text
-- **Question type inference:** `(Yes/No)` → yes/no, `(A/B/C)` → multiple choice, "how many" → numeric, otherwise → free text
