@@ -5,11 +5,16 @@ from __future__ import annotations
 import json
 from google.adk.tools import ToolContext
 
-from flowchart_agent.flowchart.navigator import find_next_unanswered, is_complete
+from flowchart_agent.flowchart.navigator import (
+    find_next_unanswered,
+    is_complete,
+    invalidate_unreachable_answers,
+)
 from flowchart_agent.database.models import (
     save_answer as db_save_answer,
     load_answers as db_load_answers,
     clear_answers as db_clear_answers,
+    clear_single_answer as db_clear_single_answer,
 )
 
 
@@ -92,19 +97,35 @@ async def save_user_answer(
     # Update session state
     answers = dict(tool_context.state.get("answers", {}))
     answers[question_id] = answer
+
+    # Invalidate answers on branches that are no longer reachable
+    # (e.g., user changed age from 45 to 15 — adult-branch answers must go)
+    invalidated = invalidate_unreachable_answers(graph, answers)
     tool_context.state["answers"] = answers
 
     # Persist to SQLite
     user_id = tool_context.state.get("user_id", "default_user")
-    await db_save_answer(user_id, question_id, answer, _flowchart_id(tool_context))
+    fid = _flowchart_id(tool_context)
+    await db_save_answer(user_id, question_id, answer, fid)
+
+    # Also remove invalidated answers from DB
+    for inv_qid in invalidated:
+        await db_clear_single_answer(user_id, inv_qid, fid)
 
     node = graph["nodes"][question_id]
-    return {
+    result = {
         "status": "saved",
         "question_id": question_id,
         "question_text": node["text"],
         "answer": answer,
     }
+    if invalidated:
+        result["invalidated_questions"] = invalidated
+        result["note"] = (
+            "Answer change caused branch switch. "
+            f"Cleared answers for: {', '.join(invalidated)}"
+        )
+    return result
 
 
 async def load_user_history(tool_context: ToolContext) -> dict:

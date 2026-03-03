@@ -68,6 +68,17 @@ async def load_answers(
     return {r[0]: r[1] for r in rows}
 
 
+async def clear_single_answer(
+    user_id: str, question_id: str, flowchart_id: str = "default"
+) -> None:
+    """Delete a single answer for a user/flowchart/question."""
+    await init_db()
+    _run_sync(
+        "DELETE FROM answers WHERE user_id = ? AND flowchart_id = ? AND question_id = ?",
+        (user_id, flowchart_id, question_id),
+    )
+
+
 async def clear_answers(
     user_id: str, flowchart_id: str = "default"
 ) -> None:

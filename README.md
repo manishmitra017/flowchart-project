@@ -112,6 +112,16 @@ All fields are optional. When omitted, sensible defaults are used.
 - **"Start over"** / **"Restart"** — clears all answers and begins again
 - **"I want to change my answer to Q3"** — updates a previous answer
 
+## Clearing Sessions
+
+To wipe all session data (answers, ADK conversation history, artifacts) and start completely fresh:
+
+```bash
+./scripts/clear_sessions.sh
+```
+
+Then restart the agent with `uv run adk web .`.
+
 ## Resuming a Session
 
 Answers are saved to SQLite (`flowchart_agent/database/answers.db`), namespaced by flowchart title. If you stop and restart the agent, it loads your previous answers and picks up where you left off.
@@ -122,6 +132,8 @@ Answers are saved to SQLite (`flowchart_agent/database/answers.db`), namespaced 
 flowchart_project/
 ├── pyproject.toml                          # uv/hatch project config
 ├── .env                                    # GOOGLE_API_KEY
+├── scripts/
+│   └── clear_sessions.sh                   # Wipe all session + answer data
 └── flowchart_agent/
     ├── __init__.py                         # Exports root_agent
     ├── agent.py                            # LlmAgent definition + init callback

@@ -72,6 +72,62 @@ def get_next_question_id(
     return conditional[0]["to"] if conditional else None
 
 
+def get_reachable_nodes(graph: dict, answers: dict[str, str]) -> set[str]:
+    """Return the set of node IDs reachable from start given current answers.
+
+    Walks the graph following answered branches. Stops at unanswered questions
+    (since future branches depend on answers not yet given) or terminal nodes.
+    This is used to detect stale answers on dead branches after an answer changes.
+    """
+    start = graph.get("start_node")
+    if not start:
+        return set()
+
+    reachable: set[str] = set()
+    current = start
+    max_depth = 50
+
+    for _ in range(max_depth):
+        if current in reachable:
+            break  # loop detected
+        reachable.add(current)
+
+        node = graph["nodes"].get(current)
+        if node is None or node["type"] == "terminal":
+            break
+
+        if current not in answers:
+            break  # can't determine path beyond unanswered question
+
+        answer = answers[current]
+        next_id = get_next_question_id(graph, current, answer)
+        if next_id is None:
+            break
+        current = next_id
+
+    return reachable
+
+
+def invalidate_unreachable_answers(
+    graph: dict, answers: dict[str, str]
+) -> list[str]:
+    """Remove answers for questions no longer reachable on the current path.
+
+    Call this after updating an answer to a branching question. Returns the
+    list of question IDs whose answers were invalidated.
+
+    Works for any flowchart — computes reachable nodes from the start given
+    current answers, then removes any answered question not on that path.
+    """
+    reachable = get_reachable_nodes(graph, answers)
+    invalidated = []
+    for qid in list(answers.keys()):
+        if qid not in reachable:
+            del answers[qid]
+            invalidated.append(qid)
+    return invalidated
+
+
 def is_complete(graph: dict, answers: dict[str, str]) -> bool:
     """Return True when traversal reaches a terminal node."""
     return find_next_unanswered(graph, answers) is None
