@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.4.9",
+  "checkpoint_id": "1730732d83ff",
+  "session_id": "387a8a19-3bdb-4ad3-9f1d-6cc78d8e8e62",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-03T12:24:30.250613Z",
+  "branch": "main",
+  "checkpoints_count": 5,
+  "files_touched": [
+    ".gitignore",
+    "README.md",
+    "flowchart_agent/agent.py",
+    "flowchart_agent/config.py",
+    "flowchart_agent/database/models.py",
+    "flowchart_agent/flowchart/parser.py",
+    "flowchart_agent/flowchart/sample_flowchart.md",
+    "flowchart_agent/prompt.py",
+    "flowchart_agent/tools/__init__.py",
+    "flowchart_agent/tools/flowchart_tools.py"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "65d25654d576",
+  "token_usage": {
+    "input_tokens": 70,
+    "cache_creation_tokens": 92279,
+    "cache_read_tokens": 4595543,
+    "output_tokens": 18127,
+    "api_call_count": 58
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-03T12:24:29.575875Z",
+    "agent_lines": 448,
+    "human_added": 2,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 450,
+    "agent_percentage": 99.55555555555556
+  }
+}
