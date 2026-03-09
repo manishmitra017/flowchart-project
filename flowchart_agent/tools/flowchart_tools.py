@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+
 from google.adk.tools import ToolContext
 
 from flowchart_agent.flowchart.navigator import (
@@ -125,6 +126,76 @@ async def save_user_answer(
             "Answer change caused branch switch. "
             f"Cleared answers for: {', '.join(invalidated)}"
         )
+    return result
+
+
+async def save_multiple_answers(
+    answers_json: str, tool_context: ToolContext
+) -> dict:
+    """Save multiple answers at once from a single user message.
+
+    Args:
+        answers_json: A JSON string mapping question IDs to answers,
+                      e.g. '{"Q2": "17", "Q5": "No", "Q7": "Yes", "Q8": "3"}'
+
+    Use this when the user provides answers to multiple questions in one message.
+    All answers are validated, saved, and branch invalidation is applied.
+    """
+    try:
+        qa_pairs = json.loads(answers_json)
+    except json.JSONDecodeError:
+        return {"error": "Invalid JSON. Provide a JSON object like {\"Q2\": \"17\", \"Q5\": \"No\"}"}
+
+    if not isinstance(qa_pairs, dict) or not qa_pairs:
+        return {"error": "Provide a non-empty JSON object mapping question IDs to answers."}
+
+    graph = tool_context.state.get("app:flowchart_graph")
+    if not graph:
+        return {"error": "Flowchart not initialized."}
+
+    current_answers = dict(tool_context.state.get("answers", {}))
+    user_id = tool_context.state.get("user_id", "default_user")
+    fid = _flowchart_id(tool_context)
+
+    saved = []
+    errors = []
+    new_qids = set()
+    for qid, answer in qa_pairs.items():
+        if qid not in graph["nodes"]:
+            errors.append(f"Unknown question ID: {qid}")
+            continue
+        current_answers[qid] = str(answer)
+        await db_save_answer(user_id, qid, str(answer), fid)
+        new_qids.add(qid)
+        node = graph["nodes"][qid]
+        saved.append({"question_id": qid, "question_text": node["text"], "answer": str(answer)})
+
+    # Only invalidate answers that existed BEFORE this call — never
+    # invalidate answers we just saved (they may be beyond an unanswered
+    # gap in the flowchart, which is fine for pre-filling).
+    invalidated = invalidate_unreachable_answers(graph, current_answers)
+    # Restore any newly-saved answers that were incorrectly invalidated
+    restored = []
+    for qid in invalidated:
+        if qid in new_qids:
+            current_answers[qid] = qa_pairs[qid]
+            await db_save_answer(user_id, qid, str(qa_pairs[qid]), fid)
+            restored.append(qid)
+    invalidated = [q for q in invalidated if q not in new_qids]
+    tool_context.state["answers"] = current_answers
+
+    for inv_qid in invalidated:
+        await db_clear_single_answer(user_id, inv_qid, fid)
+
+    result = {
+        "status": "saved",
+        "saved_count": len(saved),
+        "saved": saved,
+    }
+    if invalidated:
+        result["invalidated_questions"] = invalidated
+    if errors:
+        result["errors"] = errors
     return result
 
 
