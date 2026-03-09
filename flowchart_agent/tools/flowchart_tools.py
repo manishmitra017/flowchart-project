@@ -260,9 +260,10 @@ async def get_current_question_details(tool_context: ToolContext) -> dict:
 async def get_all_questions(tool_context: ToolContext) -> dict:
     """Get ALL questions in the flowchart with their current answer status.
 
-    Returns every question node in the flowchart, including:
-    - Already answered questions (with their current answer, for updates)
-    - Unanswered questions (for pre-answering from a single user response)
+    Returns every question node in the flowchart. The current question gets
+    full details (type, choices). Other questions get a compact summary
+    (id, text, type, and answer status) to keep token usage manageable
+    for large flowcharts (50-100+ questions).
 
     This allows the validator to:
     1. Match any part of the user's response to any question in the flowchart
@@ -277,25 +278,41 @@ async def get_all_questions(tool_context: ToolContext) -> dict:
     current_node = find_next_unanswered(graph, answers)
     current_id = current_node["id"] if current_node else None
 
-    questions = []
+    current_question = None
+    other_questions = []
     for node_id, node in graph["nodes"].items():
         if node["type"] != "question":
             continue
         existing_answer = answers.get(node_id)
-        questions.append({
-            "question_id": node["id"],
-            "question_text": node["text"],
-            "question_type": node["question_type"],
-            "choices": node.get("choices", []),
-            "is_answered": existing_answer is not None,
-            "current_answer": existing_answer,
-            "is_current": node_id == current_id,
-        })
+
+        if node_id == current_id:
+            # Full details for the current question
+            current_question = {
+                "question_id": node["id"],
+                "question_text": node["text"],
+                "question_type": node["question_type"],
+                "choices": node.get("choices", []),
+            }
+        else:
+            # Compact summary for all other questions
+            entry = {
+                "question_id": node["id"],
+                "question_text": node["text"],
+                "question_type": node["question_type"],
+            }
+            # Only include choices if it's multiple_choice or yes_no
+            if node["question_type"] in ("multiple_choice", "yes_no"):
+                entry["choices"] = node.get("choices", [])
+            if existing_answer is not None:
+                entry["current_answer"] = existing_answer
+            other_questions.append(entry)
 
     return {
         "status": "complete" if current_id is None else "in_progress",
-        "current_question_id": current_id,
-        "questions": questions,
+        "current_question": current_question,
+        "other_questions": other_questions,
+        "total_questions": (1 if current_question else 0) + len(other_questions),
+        "answered_count": len(answers),
     }
 
 
