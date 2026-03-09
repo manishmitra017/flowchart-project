@@ -1,0 +1,336 @@
+Implement the following plan:
+
+# Plan: Multi-Agent Flowchart Architecture
+
+## Context
+
+The current flowchart agent is a single `LlmAgent` doing everything — asking questions, validating answers, saving state, handling commands. The user wants to split this into a proper multi-agent hierarchy:
+
+1. **Principal Agent (PA)** — orchestrator managing conversation flow
+2. **Question Tracker Agent** — determines and presents the next question
+3. **Answer Validator Agent** — validates answers before saving, then advances to next question
+
+ADK's `LlmAgent` natively supports `sub_agents` with automatic `transfer_to_agent` tool injection. Sub-agents share the same `session.state` and conversation history. This is the right pattern (NOT `AgentTool` which creates isolated sessions, and NOT `LoopAgent` which doesn't pause for user input).
+
+## Architecture
+
+```
+root_agent (PA) — LlmAgent
+  ├── question_tracker_agent — LlmAgent (sub_agent)
+  └── answer_validator_agent — LlmAgent (sub_agent)
+```
+
+**Agent responsibilities and tool distribution:**
+
+| Agent | Role | Tools |
+|-------|------|-------|
+| PA (`flowchart_agent`) | Orchestrator: routes to sub-agents, handles special commands | `load_user_history`, `load_prefilled_answers`, `check_assessment_status`, `restart_assessment` |
+| Question Tracker | Determines next question, presents it naturally | `get_next_question` |
+| Answer Validator | Validates answer type, saves if valid, asks to retry if not | `save_user_answer`, `get_current_question_details` (NEW) |
+
+**Conversation flow:**
+- First message → PA calls `load_user_history` → transfers to Question Tracker
+- Question Tracker calls `get_next_question` → presents question → waits
+- User answers → PA transfers to Answer Validator
+- Validator calls `get_current_question_details` → validates → calls `save_user_answer` → transfers to Question Tracker
+- Invalid answer → Validator asks user to retry (stays as active agent)
+- Special commands (status/restart/change answer) → PA handles directly
+- Completion → Question Tracker reports completion, transfers back to PA
+
+## Files to Modify
+
+### 1. `flowchart_agent/tools/flowchart_tools.py` — Add new tool
+- Add `get_current_question_details(tool_context)` — returns current question's id, text, type, choices from graph state
+- Keep all existing tools unchanged
+
+### 2. `flowchart_agent/tools/__init__.py` — Export new tool
+
+### 3. `flowchart_agent/prompt.py` — Split into 3 instruction providers
+- `build_pa_instruction(context)` — orchestrator routing rules
+- `build_question_tracker_instruction(context)` — question presentation rules
+- `build_validator_instruction(context)` — validation rules per question type
+
+### 4. `flowchart_agent/agent.py` — Define 3-agent hierarchy
+- Define `question_tracker_agent` with `get_next_question` tool, `output_key="current_question"`
+- Define `answer_validator_agent` with `save_user_answer` + `get_current_question_details` tools
+- Redefine `root_agent` with `sub_agents=[question_tracker_agent, answer_validator_agent]`
+- Keep `_before_agent` callback on root_agent (unchanged init logic)
+
+### 5. `flowchart_agent/__init__.py` — No changes (still exports `root_agent`)
+
+## Verification
+1. `uv run python -c "from flowchart_agent import root_agent; print(root_agent.name, [a.name for a in root_agent.sub_agents])"` — confirms 3-agent hierarchy
+2. `uv run adk web .` — test full conversation flow:
+   - First message triggers load_user_history + question presentation
+   - Answers route through validator → save → next question
+   - Invalid answer gets retry prompt
+   - "status" / "restart" handled by PA directly
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/manishmitra/.claude/projects/-Users-manishmitra-Documents-projects-flowchart-project/8ad471dd-7ef4-4947-beb6-0cb781fc5845.jsonl
+
+---
+
+What is your view on :  Multi-Agent Systems in ADK , Are we following same patterns?
+
+---
+
+gemini-2.0-flash , i think this model is outdated, get the lates flash model?
+
+---
+
+If you see I have already answered the question The agent should be able to map if there are questions which are already answered then you should skip asking those questions
+
+---
+
+Hmm just not the next question but for the entirety of the flow chart , because user could update already answerewd question and can answer future questions
+
+---
+
+okay push the changes in , ensure no creds are pushed
+
+---
+
+okay how are we doing session management , I will need some thing where I can clean of the session
+
+---
+
+may be a shelll script that i run to clear of all of it?
+
+---
+
+Can you see the bug , when i changed the answers it should have branched , but it didnt
+
+---
+
+can you add this ./scripts/clear_sessions.sh into read me
+
+---
+
+great , well push this changes then
+
+---
+
+Briiliantly done , we will need to ensure this works for any flowchart may be 100s of them in generic way. Can you check if the prompts will work?
+
+---
+
+push this changes to main
+
+---
+
+okay now We need to have a UI that triggers the agent , hmm lets say a streamlit app, research about it and build it
+
+---
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Analysis:
+Let me chronologically analyze the conversation:
+
+1. **Initial task**: User asked to implement a multi-agent flowchart architecture plan - splitting a monolithic agent into PA (orchestrator), Question Tracker, and Answer Validator sub-agents using ADK's `sub_agents` pattern.
+
+2. **Implementation**: I created the 3-agent hierarchy by modifying:
+   - `flowchart_tools.py` - Added `get_current_question_details` tool
+   - `tools/__init__.py` - Updated exports
+   - `prompt.py` - Split into 3 instruction providers
+   - `agent.py` - Defined 3-agent hierarchy with sub_agents
+
+3. **ADK patterns review**: User asked if we're following ADK multi-agent patterns. I fetched ADK docs and confirmed we're using the Coordinator/Dispatcher pattern with LLM-driven transfer (correct), not AgentTool (isolated sessions) or LoopAgent/SequentialAgent (can't pause for user input).
+
+4. **Model upgrade**: User said gemini-2.0-flash is outdated. I researched and updated all 3 agents to `gemini-2.5-flash` (latest stable).
+
+5. **Multi-answer extraction**: User showed screenshots where "My Name is manish and I am 19 years old" only saved the name, then asked age separately. I initially added `get_upcoming_questions` (5-question lookahead), then user said it should work for the ENTIRE flowchart and handle updates to already-answered questions. I replaced it with `get_all_questions` returning ALL questions with answer status.
+
+6. **Branch invalidation bug**: User showed screenshots where changing age from 45→15 didn't trigger re-branching (still asked Q3/bio sex instead of Q4_minor/guardian). The root cause: stale answers on dead branches weren't being cleaned up. I added `get_reachable_nodes()` and `invalidate_unreachable_answers()` to navigator.py, and `clear_single_answer()` to models.py. `save_user_answer` now auto-prunes dead-branch answers.
+
+7. **Session cleanup script**: User asked for a shell script to clear all session data. I created `scripts/clear_sessions.sh` that removes answers.db, .adk/session.db files, artifacts, and pycache.
+
+8. **README update**: User asked to add the script to README. Done.
+
+9. **Generic prompt review**: User asked to verify prompts work for any flowchart (100s of them). I found 3 issues:
+   - PA prompt referenced `save_user_answer` for "change my answer" but PA doesn't have that tool → fixed to transfer to validator
+   - Validator had hardcoded health-assessment example → made generic
+   - `get_all_questions` returned full details for every question (won't scale) → split into current_question (full) + other_questions (compact), ~2.3K tokens for 100 questions
+
+10. **Streamlit UI**: User asked to research and build a Streamlit app triggering the agent. I entered plan mode, launched research agents for ADK Runner API and Streamlit integration. Found:
+    - ADK Runner pattern: `Runner(agent=root_agent, app_name=..., session_service=InMemorySessionService())`
+    - `runner.run_async(user_id, session_id, new_message)` returns async event generator
+    - Streamlit async challenge: use `asyncio.run()` wrapper
+    - Multiple Medium tutorials exist for ADK + Streamlit
+    - User specifically said "you need to find about google adk + streamlit"
+    - I was in the middle of plan mode, had fetched ADK event loop docs and searched for tutorials
+
+Current state: In plan mode, researching Streamlit + ADK integration. Plan file exists but needs to be written/updated. Have not yet written the plan or created any Streamlit files.
+
+Summary:
+1. Primary Request and Intent:
+   - **Initial**: Implement a multi-agent flowchart architecture splitting a monolithic `LlmAgent` into 3 agents: Principal Agent (orchestrator), Question Tracker Agent, and Answer Validator Agent using ADK's native `sub_agents` with `transfer_to_agent`.
+   - **Model upgrade**: Update from `gemini-2.0-flash` to latest stable flash model.
+   - **Multi-answer extraction**: When a user answers multiple questions in one message (e.g., "My name is Manish and I am 19"), the agent should extract and save ALL answers, not just the current question's. This should work across the ENTIRE flowchart, including updating previously answered questions.
+   - **Branch invalidation**: When a branching question's answer changes (e.g., age 45→15), stale answers on the now-dead branch must be automatically invalidated. Must work for ANY flowchart generically.
+   - **Session cleanup**: A shell script to wipe all session data (ADK sessions, answers DB, artifacts).
+   - **Generic prompt hardening**: Ensure prompts work for any flowchart (100s), no hardcoded examples, scalable token usage.
+   - **Streamlit UI** (current): Research and build a Streamlit app that triggers the ADK flowchart agent. User explicitly said "we need to have a UI that triggers the agent, hmm lets say a streamlit app, research about it and build it" and later clarified "you need to find about google adk + streamlit".
+
+2. Key Technical Concepts:
+   - **ADK Multi-Agent Systems**: `sub_agents` parameter on `LlmAgent` auto-injects `transfer_to_agent` tool. Sub-agents share same `session.state` and conversation history. This is the Coordinator/Dispatcher pattern.
+   - **ADK vs alternatives**: `sub_agents` (shared session) chosen over `AgentTool` (isolated sessions), `LoopAgent` (can't pause for user input), `SequentialAgent` (fixed order, no pausing).
+   - **ADK Runner API**: `Runner(agent=root_agent, app_name=..., session_service=InMemorySessionService())` with `runner.run_async(user_id, session_id, new_message)` returning `AsyncGenerator[Event]`.
+   - **Branch invalidation algorithm**: Compute reachable nodes from start given current answers, prune any answered question not on that path.
+   - **Token-efficient tool responses**: For large flowcharts, return full details only for current question, compact summaries for others (~2.3K tokens for 100 questions).
+   - **Streamlit + async challenge**: Streamlit is synchronous; ADK is async. Use `asyncio.run()` wrapper or threading. Store ADK Runner and session in `st.session_state` to persist across reruns.
+   - **Model**: `gemini-2.5-flash` (latest stable), `gemini-3-flash-preview` available but preview-only.
+
+3. Files and Code Sections:
+
+   - **`flowchart_agent/agent.py`** — Defines the 3-agent hierarchy
+     - Modified: Split monolithic agent into root + 2 sub-agents, updated model to gemini-2.5-flash
+     ```python
+     question_tracker_agent = LlmAgent(
+         name="question_tracker_agent",
+         model="gemini-2.5-flash",
+         instruction=build_question_tracker_instruction,
+         description="Determines and presents the next question in the flowchart. Transfer to this agent when it's time to ask the next question.",
+         tools=[get_next_question],
+     )
+
+     answer_validator_agent = LlmAgent(
+         name="answer_validator_agent",
+         model="gemini-2.5-flash",
+         instruction=build_validator_instruction,
+         description="Validates the user's answer against the question type and saves it if valid. Transfer to this agent when the user provides an answer.",
+         tools=[save_user_answer, get_current_question_details, get_all_questions],
+     )
+
+     root_agent = LlmAgent(
+         name="flowchart_agent",
+         model="gemini-2.5-flash",
+         instruction=build_pa_instruction,
+         description="A conversational agent that follows any Mermaid flowchart to ask questions using a multi-agent architecture.",
+         tools=[load_user_history, load_prefilled_answers, check_assessment_status, restart_assessment],
+         sub_agents=[question_tracker_agent, answer_validator_agent],
+         before_agent_callback=_before_agent,
+     )
+     ```
+
+   - **`flowchart_agent/prompt.py`** — Three instruction providers
+     - Modified: Split single `build_instruction` into `build_pa_instruction`, `build_question_tracker_instruction`, `build_validator_instruction`
+     - PA: orchestrator routing rules, handles special commands, transfers to sub-agents
+     - Question Tracker: calls `get_next_question`, presents naturally, one question per message
+     - Validator: calls `get_all_questions`, scans user response against ALL questions, extracts multiple answers, validates per type, saves valid answers
+     - Key fix: PA "change my answer" now transfers to validator (not calling `save_user_answer` which PA doesn't have)
+     - Key fix: Removed hardcoded health-assessment example from validator
+     - Validator now references `current_question` (full details) and `other_questions` (compact) structure
+
+   - **`flowchart_agent/tools/flowchart_tools.py`** — All ADK function tools
+     - Added: `get_current_question_details`, `get_all_questions` (compact format for scale)
+     - Modified: `save_user_answer` now calls `invalidate_unreachable_answers()` after saving, prunes dead-branch answers from both state and DB, returns `invalidated_questions` list in response
+     - `get_all_questions` returns `current_question` (full: id, text, type, choices) + `other_questions` (compact: id, text, type, choices only for MC/yes_no, current_answer if answered)
+     ```python
+     async def get_all_questions(tool_context: ToolContext) -> dict:
+         # Returns current_question (full details) + other_questions (compact)
+         # ~2.3K tokens for 100 questions
+         ...
+         return {
+             "status": "complete" if current_id is None else "in_progress",
+             "current_question": current_question,
+             "other_questions": other_questions,
+             "total_questions": (1 if current_question else 0) + len(other_questions),
+             "answered_count": len(answers),
+         }
+     ```
+
+   - **`flowchart_agent/flowchart/navigator.py`** — Graph traversal logic
+     - Added: `get_reachable_nodes(graph, answers)` — walks graph from start following answered branches, returns set of reachable node IDs
+     - Added: `invalidate_unreachable_answers(graph, answers)` — removes answers for questions not reachable on current path, returns list of invalidated IDs
+     ```python
+     def invalidate_unreachable_answers(graph, answers):
+         reachable = get_reachable_nodes(graph, answers)
+         invalidated = []
+         for qid in list(answers.keys()):
+             if qid not in reachable:
+                 del answers[qid]
+                 invalidated.append(qid)
+         return invalidated
+     ```
+
+   - **`flowchart_agent/database/models.py`** — SQLite persistence
+     - Added: `clear_single_answer(user_id, question_id, flowchart_id)` for per-question deletion (used by branch invalidation)
+
+   - **`flowchart_agent/tools/__init__.py`** — Updated exports to include `get_current_question_details`, `get_all_questions`
+
+   - **`scripts/clear_sessions.sh`** — Session cleanup script
+     - Removes: `answers.db`, all `.adk/session.db` files, `.adk/artifacts/`, `database/__pycache__/`
+     ```bash
+     #!/usr/bin/env bash
+     set -euo pipefail
+     PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+     # Removes answers.db, .adk/session.db files, .adk/artifacts/, __pycache__
+     ```
+
+   - **`README.md`** — Added "Clearing Sessions" section and `scripts/` to project structure
+
+   - **`flowchart_agent/flowchart/sample_flowchart.md`** — Health intake demo flowchart (read for context, minor changes)
+   - **`flowchart_agent/flowchart/parser.py`** — Mermaid parser (read for context, unchanged)
+
+4. Errors and Fixes:
+   - **PA prompt referencing wrong tool**: PA instruction told LLM to call `save_user_answer` for "change my answer" but PA's tool list doesn't include it (only validator has it). Fixed by changing to "Transfer to `answer_validator_agent`".
+   - **Multi-answer not working**: User said "My Name is manish and I am 19 year old" but agent only saved name, still asked age. Root cause: validator only looked at current question. Fix: Added `get_all_questions` tool giving validator visibility into all questions.
+   - **User feedback on scope**: Initially implemented `get_upcoming_questions` with 5-question lookahead. User explicitly said "not just the next question but for the entirety of the flow chart, because user could update already answered question and can answer future questions". Replaced with `get_all_questions` returning ALL questions.
+   - **Branch invalidation bug**: User showed screenshots where changing age 45→15 didn't re-branch (asked Q3/bio sex instead of Q4_minor/guardian). Root cause: stale answers from old branch still in `answers` dict, but `find_next_unanswered` correctly follows new branch — the issue was that Q4_adult and Q3 were already answered on the old branch and navigator skipped them. Fix: Added `invalidate_unreachable_answers()` called from `save_user_answer`.
+   - **Hardcoded health example in validator prompt**: "I'm Manish, 19 years old, male, software engineer..." was health-specific. User wanted generic support for 100s of flowcharts. Replaced with generic guidance.
+   - **Token scaling**: `get_all_questions` returning full details for every question wouldn't scale to 100+ questions. Split into current (full) + others (compact), verified ~2.3K tokens for 100 questions.
+
+5. Problem Solving:
+   - Multi-agent architecture implemented using ADK's Coordinator/Dispatcher pattern (confirmed against official docs)
+   - Branch invalidation solved generically using reachable-node computation from graph start
+   - Token efficiency for large flowcharts solved with compact question summaries
+   - Session cleanup solved with shell script covering all storage layers (ADK sessions + SQLite + artifacts)
+   - Currently researching Streamlit + ADK integration for UI
+
+6. All User Messages:
+   - "Implement the following plan: Multi-Agent Flowchart Architecture [detailed plan]"
+   - "What is your view on: Multi-Agent Systems in ADK, Are we following same patterns?"
+   - "gemini-2.0-flash, i think this model is outdated, get the latest flash model?"
+   - "If you see I have already answered the question The agent should be able to map if there are questions which are already answered then you should skip asking those questions" [with screenshots showing multi-answer not working]
+   - "Hmm just not the next question but for the entirety of the flow chart, because user could update already answered question and can answer future questions"
+   - "okay push the changes in, ensure no creds are pushed"
+   - "Can you see the bug, when i changed the answers it should have branched, but it didnt" [with screenshots showing age 45→15 not branching]
+   - "Remember this should work for any flowchart" (rejected my test that used specific flowchart data)
+   - "can you add this ./scripts/clear_sessions.sh into read me"
+   - "great, well push this changes then"
+   - "Brilliantly done, we will need to ensure this works for any flowchart maybe 100s of them in generic way. Can you check if the prompts will work?"
+   - "push this changes to main"
+   - "okay now We need to have a UI that triggers the agent, hmm lets say a streamlit app, research about it and build it"
+   - "See you need to find about google adk + streamlit"
+
+7. Pending Tasks:
+   - **Build Streamlit UI**: Research complete, need to write plan and implement. User explicitly asked to "research about it and build it".
+
+8. Current Work:
+   Currently in **plan mode** for building a Streamlit app that triggers the ADK flowchart agent. Research phase is complete:
+   
+   - **ADK Runner API** researched: `Runner(agent=root_agent, app_name=..., session_service=InMemorySessionService())` → `runner.run_async(user_id, session_id, new_message)` returns `AsyncGenerator[Event]`
+   - **Streamlit + ADK integration** researched: Found multiple Medium tutorials for ADK + Streamlit. Key pattern: store Runner and session in `st.session_state`, use `asyncio.run()` for async calls, use `st.chat_input`/`st.chat_message` for chat UI
+   - **ADK Event Loop docs** fetched from official ADK docs
+   - **Web search** completed for "google ADK agent streamlit integration tutorial"
+   
+   Plan file exists at `/Users/manishmitra/.claude/plans/quiet-jingling-otter.md` but has NOT been updated with the Streamlit plan yet. Need to: write the plan, call ExitPlanMode, then implement.
+
+9. Optional Next Step:
+   Write the Streamlit implementation plan to the plan file and call ExitPlanMode for user approval. The user said: "okay now We need to have a UI that triggers the agent, hmm lets say a streamlit app, research about it and build it" and clarified "See you need to find about google adk + streamlit". Research is done; next step is to finalize the plan with specific files to create/modify, then implement the Streamlit app after approval.
+
+   Key research findings to incorporate:
+   - Use `Runner` from `google.adk` with `InMemorySessionService`
+   - Handle async ADK calls in Streamlit via `asyncio.run()`
+   - Store ADK runner/session in `st.session_state`
+   - Reference existing tutorials: [ADK + Streamlit Deep Dive](https://medium.com/@ketanraaz/build-your-agent-a-deep-dive-into-google-adk-and-streamlit-integration-cee9d79164e4)
+   - Git commits so far: `9015b44` → `cd4c606` → `adaf0af` → `3348d58` (all on main)
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/manishmitra/.claude/projects/-Users-manishmitra-Documents-projects-flowchart-project/387a8a19-3bdb-4ad3-9f1d-6cc78d8e8e62.jsonl
+Please continue the conversation from where we left off without asking the user any further questions. Continue with the last task that you were asked to work on.
+
+---
+
+[Request interrupted by user for tool use]
