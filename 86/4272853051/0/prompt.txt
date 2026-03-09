@@ -1,0 +1,220 @@
+Implement the following plan:
+
+# Plan: Streamlit UI for Flowchart Agent
+
+## Context
+
+The flowchart multi-agent system is fully implemented (3-agent hierarchy with PA, Question Tracker, Answer Validator). Currently it runs via `adk web .` or `adk run flowchart_agent`. The user wants a custom Streamlit chat UI that triggers the ADK agent directly, giving more control over the user experience.
+
+## Architecture
+
+```
+streamlit_app.py (Streamlit chat UI)
+  └── Uses ADK Runner API to invoke root_agent
+      ├── Runner(agent=root_agent, session_service=InMemorySessionService())
+      ├── runner.run_async(user_id, session_id, Content) → AsyncGenerator[Event]
+      └── Extract agent text from events, display in chat
+```
+
+**Key integration points:**
+- ADK `Runner` + `InMemorySessionService` for session management
+- `runner.run_async()` returns async events — wrap with `asyncio.run()` for Streamlit
+- Store Runner, session_service, and session_id in `st.session_state` to persist across Streamlit reruns
+- Extract final agent text from `Event` objects (check `event.content.parts[0].text` where `event.author` is an agent)
+
+## Files to Create/Modify
+
+### 1. `streamlit_app.py` (NEW) — Main Streamlit application
+
+**Structure:**
+```python
+import streamlit as st
+import asyncio
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
+from flowchart_agent import root_agent
+
+# Page config
+st.set_page_config(page_title="Flowchart Agent", page_icon="📋")
+
+# Initialize ADK Runner in session_state (once)
+if "runner" not in st.session_state:
+    session_service = InMemorySessionService()
+    runner = Runner(agent=root_agent, app_name="flowchart_app", session_service=session_service)
+    st.session_state.runner = runner
+    st.session_state.session_service = session_service
+    st.session_state.session_id = "streamlit_session_001"
+    st.session_state.user_id = "streamlit_user"
+    st.session_state.messages = []  # Chat history for display
+
+# Async wrapper to call runner.run_async()
+async def run_agent(user_message: str) -> str:
+    content = types.Content(role="user", parts=[types.Part(text=user_message)])
+    response_text = ""
+    async for event in st.session_state.runner.run_async(
+        user_id=st.session_state.user_id,
+        session_id=st.session_state.session_id,
+        new_message=content,
+    ):
+        if event.content and event.content.parts:
+            for part in event.content.parts:
+                if hasattr(part, "text") and part.text and event.author != "user":
+                    response_text = part.text  # Take last agent response
+    return response_text
+
+# Display chat history
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# Chat input
+if prompt := st.chat_input("Type your answer..."):
+    # Display user message
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Run agent and display response
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            response = asyncio.run(run_agent(prompt))
+        st.markdown(response)
+    st.session_state.messages.append({"role": "assistant", "content": response})
+
+# Auto-trigger first message to start the questionnaire
+if not st.session_state.messages:
+    with st.chat_message("assistant"):
+        with st.spinner("Starting..."):
+            response = asyncio.run(run_agent("Hello"))
+    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.rerun()
+```
+
+**Key decisions:**
+- `asyncio.run()` to bridge sync Streamlit → async ADK Runner
+- Auto-send "Hello" on first load to trigger PA → load_user_history → question_tracker flow
+- Chat history in `st.session_state.messages` for display persistence
+- Take the last agent text from events (sub-agent transfers produce intermediate events)
+
+### 2. `pyproject.toml` — Add streamlit dependency
+
+Add `"streamlit"` to the `dependencies` list.
+
+### 3. `README.md` — Add Streamlit UI section
+
+Add instructions for running with Streamlit:
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+## Event Handling Details
+
+ADK `runner.run_async()` yields `Event` objects. In a multi-agent system:
+- Events from tool calls (function_call, function_response) should be skipped
+- Events with `event.content.parts[0].text` from agent authors contain the user-facing text
+- The **last** text event is typically the final response (after all transfers complete)
+- Filter: `event.author != "user"` and `event.content` has text parts
+
+## Verification
+
+1. **Import check**: `uv run python -c "from flowchart_agent import root_agent; print('OK')"`
+2. **Run Streamlit**: `uv run streamlit run streamlit_app.py`
+3. **Test flow**:
+   - App auto-starts with first question
+   - Answer a question → validator saves → next question appears
+   - Multi-answer ("My name is X and I'm Y years old") → both saved
+   - "What's my status?" → PA handles directly
+   - "Start over" → clears and restarts
+4. **Custom flowchart**: `FLOWCHART_PATH=./my_flowchart.md uv run streamlit run streamlit_app.py`
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/manishmitra/.claude/projects/-Users-manishmitra-Documents-projects-flowchart-project/387a8a19-3bdb-4ad3-9f1d-6cc78d8e8e62.jsonl
+
+---
+
+google.adk.errors.session_not_found_error.SessionNotFoundError: Session not found: streamlit_session_001
+
+File "/Users/manishmitra/Documents/projects/flowchart_project/.venv/lib/python3.11/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+             ^^^^^^
+File "/Users/manishmitra/Documents/projects/flowchart_project/.venv/lib/python3.11/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 689, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/Users/manishmitra/Documents/projects/flowchart_project/streamlit_app.py", line 66, in <module>
+    response = run_agent("Hello")
+               ^^^^^^^^^^^^^^^^^^
+File "/Users/manishmitra/Documents/projects/flowchart_project/streamlit_app.py", line 52, in run_agent
+    return loop.run_until_complete(_run_agent(user_message))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/Users/manishmitra/.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+File "/Users/manishmitra/Documents/projects/flowchart_project/streamlit_app.py", line 36, in _run_agent
+    async for event in st.session_state.runner.run_async(
+File "/Users/manishmitra/Documents/projects/flowchart_project/.venv/lib/python3.11/site-packages/google/adk/runners.py", line 565, in run_async
+    async for event in agen:
+File "/Users/manishmitra/Documents/projects/flowchart_project/.venv/lib/python3.11/site-packages/google/adk/runners.py", line 497, in _run_with_trace
+    session = await self._get_or_create_session(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/Users/manishmitra/Documents/projects/flowchart_project/.venv/lib/python3.11/site-packages/google/adk/runners.py", line 385, in _get_or_create_session
+    raise SessionNotFoundError(message)  - please check , there are some errors
+
+---
+
+It directly finished all the question
+
+---
+
+If you see I have already answered few questions , but it basically dint map the answers
+
+---
+
+Basically I didnt answer the next question , but kind of answered the other question. Now if the question is alreadt answered and it is in the flow , it should not be asked
+
+---
+
+doesnt work
+
+---
+
+Warning: there are non-text parts in the response: ['function_call'], returning concatenated text result from text parts. Check the full candidates.content.parts accessor to get the full model response.
+[DEBUG] flowchart_agent -> tool: load_user_history({})
+[DEBUG] flowchart_agent -> text: Hello! I'm ready to start your health assessment.
+
+
+[DEBUG] flowchart_agent -> tool: transfer_to_agent({'agent_name': 'question_tracker_agent'})
+[DEBUG] question_tracker_agent -> tool: get_next_question({})
+[DEBUG] question_tracker_agent -> text: Hello! To start, could you please tell me your full name?
+[DEBUG] question_tracker_agent -> tool: transfer_to_agent({'agent_name': 'answer_validator_agent'})
+[DEBUG] answer_validator_agent -> tool: get_all_questions({})
+[DEBUG] answer_validator_agent -> tool: save_user_answer({'question_id': 'Q1', 'answer': 'manish'})
+[DEBUG] answer_validator_agent -> text: Got your name!
+
+[DEBUG] answer_validator_agent -> tool: transfer_to_agent({'agent_name': 'question_tracker_agent'})
+[DEBUG] question_tracker_agent -> tool: get_next_question({})
+[DEBUG] question_tracker_agent -> text: Great, thank you Manish!
+
+Next up, could you please tell me how old you are?
+[DEBUG] question_tracker_agent -> tool: transfer_to_agent({'agent_name': 'answer_validator_agent'})
+[DEBUG] answer_validator_agent -> tool: get_all_questions({})
+[DEBUG] answer_validator_agent -> tool: save_multiple_answers({'answers_json': '{"Q2": "< 18", "Q5": "No", "Q7": "Yes", "Q8": "3"}'})
+[DEBUG] answer_validator_agent -> text: Got your age, allergy status, and smoking information!
+
+[DEBUG] answer_validator_agent -> tool: transfer_to_agent({'agent_name': 'question_tracker_agent'})
+[DEBUG] question_tracker_agent -> tool: get_next_question({})
+[DEBUG] question_tracker_agent -> text: Alright, moving on! Since you're under 18, could you please tell me who your parent or guardian is?
+[DEBUG] question_tracker_agent -> tool: transfer_to_agent({'agent_name': 'answer_validator_agent'})
+[DEBUG] answer_validator_agent -> tool: get_all_questions({})
+[DEBUG] answer_validator_agent -> tool: save_user_answer({'question_id': 'Q4_minor', 'answer': 'Suhas'})
+[DEBUG] answer_validator_agent -> text: Got it!
+
+[DEBUG] answer_validator_agent -> tool: transfer_to_agent({'agent_name': 'question_tracker_agent'})
+[DEBUG] question_tracker_agent -> tool: get_next_question({})
+[DEBUG] question_tracker_agent -> text: Thanks, Suhas!
+
+Next, a quick question about allergies: do you have any known allergies? Please answ
+
+---
+
+can you please create a PR , so that I can merge

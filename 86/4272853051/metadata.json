@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.9",
+  "checkpoint_id": "864272853051",
+  "strategy": "manual-commit",
+  "branch": "feature/streamlit-ui",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "README.md",
+    "flowchart_agent/agent.py",
+    "flowchart_agent/prompt.py",
+    "flowchart_agent/tools/flowchart_tools.py",
+    "pyproject.toml",
+    "streamlit_app.py",
+    "uv.lock"
+  ],
+  "sessions": [
+    {
+      "metadata": "/86/4272853051/0/metadata.json",
+      "transcript": "/86/4272853051/0/full.jsonl",
+      "context": "/86/4272853051/0/context.md",
+      "content_hash": "/86/4272853051/0/content_hash.txt",
+      "prompt": "/86/4272853051/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 81807,
+    "cache_read_tokens": 3491886,
+    "output_tokens": 18126,
+    "api_call_count": 44
+  }
+}

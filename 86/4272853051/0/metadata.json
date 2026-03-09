@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.9",
+  "checkpoint_id": "864272853051",
+  "session_id": "35288bd0-0f50-43fb-8503-39780d0db5ed",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-09T08:00:11.980569Z",
+  "branch": "feature/streamlit-ui",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "README.md",
+    "flowchart_agent/agent.py",
+    "flowchart_agent/prompt.py",
+    "flowchart_agent/tools/flowchart_tools.py",
+    "pyproject.toml",
+    "streamlit_app.py",
+    "uv.lock"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "ffa80958e036",
+  "token_usage": {
+    "input_tokens": 60,
+    "cache_creation_tokens": 81807,
+    "cache_read_tokens": 3491886,
+    "output_tokens": 18126,
+    "api_call_count": 44
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-09T08:00:11.743111Z",
+    "agent_lines": 605,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 605,
+    "agent_percentage": 100
+  }
+}
