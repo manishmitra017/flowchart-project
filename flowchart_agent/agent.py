@@ -21,6 +21,7 @@ from flowchart_agent.prompt import (
 from flowchart_agent.tools.flowchart_tools import (
     get_next_question,
     save_user_answer,
+    save_multiple_answers,
     load_user_history,
     load_prefilled_answers,
     check_assessment_status,
@@ -102,7 +103,7 @@ answer_validator_agent = LlmAgent(
     model="gemini-2.5-flash",
     instruction=build_validator_instruction,
     description="Validates the user's answer against the question type and saves it if valid. Transfer to this agent when the user provides an answer.",
-    tools=[save_user_answer, get_current_question_details, get_all_questions],
+    tools=[save_user_answer, save_multiple_answers, get_current_question_details, get_all_questions],
 )
 
 

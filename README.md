@@ -54,6 +54,18 @@ FLOWCHART_PATH=./my_flowchart.md uv run adk web .
 
 The `FLOWCHART_PATH` environment variable points to any `.md` file containing a Mermaid flowchart (with optional frontmatter). When omitted, the bundled health intake demo is used.
 
+### Streamlit Chat UI
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+With a custom flowchart:
+
+```bash
+FLOWCHART_PATH=./my_flowchart.md uv run streamlit run streamlit_app.py
+```
+
 ### ADK CLI
 
 ```bash
@@ -131,6 +143,7 @@ Answers are saved to SQLite (`flowchart_agent/database/answers.db`), namespaced 
 ```
 flowchart_project/
 ├── pyproject.toml                          # uv/hatch project config
+├── streamlit_app.py                        # Streamlit chat UI
 ├── .env                                    # GOOGLE_API_KEY
 ├── scripts/
 │   └── clear_sessions.sh                   # Wipe all session + answer data
