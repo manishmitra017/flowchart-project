@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.9",
+  "checkpoint_id": "feacda9c3a29",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "flowchart_agent/flowchart/sample_flowchart.md",
+    "flowchart_agent/prompt.py",
+    "flowchart_agent/tools/flowchart_tools.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fe/acda9c3a29/0/metadata.json",
+      "transcript": "/fe/acda9c3a29/0/full.jsonl",
+      "context": "/fe/acda9c3a29/0/context.md",
+      "content_hash": "/fe/acda9c3a29/0/content_hash.txt",
+      "prompt": "/fe/acda9c3a29/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 154755,
+    "cache_read_tokens": 1932528,
+    "output_tokens": 4699,
+    "api_call_count": 14
+  }
+}
